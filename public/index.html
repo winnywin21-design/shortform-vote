@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0F">
+<title>🗳️ 숏폼 실시간 투표</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+  :root {
+    --pink: #FF0080;
+    --yellow: #FFE500;
+    --cyan: #00E5FF;
+    --purple: #8B00FF;
+    --gold: #FFD700;
+    --dark: #0A0A0F;
+    --card: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { min-height: 100%; }
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--dark);
+    color: white;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    overscroll-behavior: contain;
+  }
+
+  .bg-gradient {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(255,0,128,0.35), transparent 45%),
+      radial-gradient(circle at 85% 75%, rgba(0,229,255,0.30), transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(139,0,255,0.20), transparent 55%);
+    animation: bgMove 18s ease-in-out infinite;
+  }
+  @keyframes bgMove {
+    0%, 100% { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg); }
+    50%      { transform: scale(1.25) rotate(180deg); filter: hue-rotate(30deg); }
+  }
+  .bg-grain {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ===== CRT 스캔라인 ===== */
+  body.crt-on::after {
+    content: '';
+    position: fixed; inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg,
+      rgba(0,0,0,0) 0,
+      rgba(0,0,0,0.22) 1px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0) 3px);
+    animation: scanlines 8s linear infinite;
+    mix-blend-mode: multiply;
+  }
+  body.crt-on::before {
+    content: '';
+    position: fixed; inset: 0;
+    z-index: 51;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+  }
+  @keyframes scanlines {
+    from { background-position: 0 0; }
+    to   { background-position: 0 200px; }
+  }
+
+  .container {
+    position: relative; z-index: 2;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 10rem;
+  }
+
+  header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    margin-bottom: 1.75rem;
+    gap: 0.6rem;
+  }
+  .eyebrow {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    opacity: 0.55;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .eyebrow .dot {
+    width: 8px; height: 8px;
+    background: #00ff88;
+    border-radius: 50%;
+    box-shadow: 0 0 12px #00ff88;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .eyebrow.closed .dot { background: #ff4444; box-shadow: 0 0 12px #ff4444; }
+  .eyebrow.closed::after { content: ' · 종료됨'; color: #ff6b6b; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.4); }
+  }
+  h1 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 900;
+    font-size: clamp(1.6rem, 5vw, 2.8rem);
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    background: linear-gradient(135deg, var(--pink) 0%, var(--yellow) 50%, var(--cyan) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin: 0;
+    text-align: center;
+  }
+  h1 span.flair {
+    display: inline-block;
+    animation: wiggle 2.5s ease-in-out infinite;
+  }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+  }
+
+  .stats {
+    display: flex; gap: 0.6rem;
+    justify-content: center; flex-wrap: wrap;
+    margin-top: 0.4rem;
+  }
+  .stat {
+    background: var(--card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    display: flex; align-items: center; gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .stat strong {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 1.05rem;
+  }
+
+  .card {
+    background: var(--card);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--border);
+    border-radius: 1.75rem;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+  .card > h2 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.1rem;
+    text-align: center;
+  }
+
+  /* ===== 배너 ===== */
+  .vote-hint {
+    text-align: center;
+    padding: 0.85rem 1.2rem;
+    background: linear-gradient(135deg, rgba(255,229,0,0.12), rgba(0,229,255,0.12));
+    border: 1px solid rgba(255,229,0,0.3);
+    border-radius: 1rem;
+    margin-bottom: 1.25rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    animation: hintPulse 2.5s ease-in-out infinite;
+  }
+  @keyframes hintPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(255,229,0,0); }
+    50%      { transform: scale(1.01); box-shadow: 0 0 20px rgba(255,229,0,0.15); }
+  }
+  .voted-banner, .closed-banner {
+    display: none;
+    text-align: center;
+    padding: 0.95rem 1.2rem;
+    border-radius: 1rem;
+    margin-bottom: 1.25rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .voted-banner {
+    background: linear-gradient(135deg, rgba(0,255,136,0.15), rgba(0,229,255,0.15));
+    border: 1px solid rgba(0,255,136,0.35);
+  }
+  .closed-banner {
+    background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,0,128,0.15));
+    border: 1px solid rgba(255,215,0,0.4);
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+  .voted-banner.show, .closed-banner.show {
+    display: block;
+    animation: slideDown 0.5s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* ===== 투표 그리드 ===== */
+  .vote-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.9rem;
+  }
+
+  .vote-col {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  /* 막대 영역 */
+  .bar-wrap {
+    position: relative;
+    height: 260px;
+    background: rgba(0,0,0,0.25);
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 0.5rem;
+    margin-top: 2rem; /* 왕관 공간 확보 */
+  }
+  .bar-crown {
+    position: absolute;
+    top: -2rem; left: 50%;
+    transform: translateX(-50%) scale(0);
+    font-size: 2rem;
+    filter: drop-shadow(0 0 10px var(--gold));
+    transition: transform 0.5s cubic-bezier(.34,1.56,.64,1);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .vote-col.leader .bar-crown {
+    transform: translateX(-50%) scale(1) rotate(-5deg);
+    animation: crownFloat 2.5s ease-in-out infinite;
+  }
+  @keyframes crownFloat {
+    0%, 100% { transform: translateX(-50%) scale(1) rotate(-5deg) translateY(0); }
+    50%      { transform: translateX(-50%) scale(1.15) rotate(5deg) translateY(-5px); }
+  }
+
+  /* 0표일 때 막대 바깥에 표시 */
+  .bar-count-empty {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .vote-col:not([data-empty="true"]) .bar-count-empty { display: none; }
+
+  .bar {
+    width: 100%;
+    height: 0;
+    background: linear-gradient(180deg, var(--bar-color, var(--pink)), color-mix(in srgb, var(--bar-color, var(--pink)) 60%, #000));
+    border-radius: 0.75rem 0.75rem 0.5rem 0.5rem;
+    transition: height 0.6s cubic-bezier(.34,1.56,.64,1),
+                width 0.6s cubic-bezier(.34,1.56,.64,1);
+    position: relative;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--bar-color, var(--pink)) 50%, transparent),
+                inset 0 2px 0 rgba(255,255,255,0.25);
+    transform-origin: bottom center;
+    overflow: hidden;
+  }
+  .bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent 40%);
+    pointer-events: none;
+  }
+  /* 막대 안 숫자 (데스크톱: 막대 내부 상단) */
+  .bar-count-inside {
+    position: absolute;
+    top: 8px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .vote-col:not([data-empty="true"]) .bar-count-inside { opacity: 1; }
+
+  .vote-col.leader .bar {
+    box-shadow: 0 0 40px var(--gold),
+                0 0 20px color-mix(in srgb, var(--bar-color) 80%, transparent),
+                inset 0 2px 0 rgba(255,255,255,0.4);
+  }
+
+  /* 막대 튕김 효과 (표 도착 시) */
+  .vote-col.bounce .bar {
+    animation: barBounce 0.55s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes barBounce {
+    0%   { transform: scaleY(1) scaleX(1); }
+    30%  { transform: scaleY(1.12) scaleX(0.95); }
+    60%  { transform: scaleY(0.96) scaleX(1.03); }
+    100% { transform: scaleY(1) scaleX(1); }
+  }
+
+  /* 투표 버튼 */
+  .vote-btn {
+    background: rgba(255,255,255,0.04);
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 1.2rem;
+    padding: 1rem 0.6rem;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: inherit;
+    transition: transform 0.2s cubic-bezier(.34,1.56,.64,1),
+                border-color 0.2s, background 0.2s, box-shadow 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .vote-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--bar-color), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .vote-btn > * { position: relative; z-index: 1; }
+  .vote-btn:hover:not(:disabled) {
+    transform: translateY(-3px);
+    border-color: var(--bar-color);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--bar-color) 30%, transparent);
+  }
+  .vote-btn:hover:not(:disabled)::before { opacity: 0.15; }
+  .vote-btn:active:not(:disabled) { transform: scale(0.95); }
+  .vote-btn:disabled { cursor: default; opacity: 0.55; }
+  .vote-btn .emoji {
+    font-size: 2rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));
+  }
+  .vote-btn .label {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+    text-align: center;
+    line-height: 1.15;
+  }
+  .vote-btn .check {
+    position: absolute;
+    top: 0.4rem; right: 0.4rem;
+    font-size: 1.2rem;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.4s cubic-bezier(.34,1.56,.64,1);
+    z-index: 2;
+  }
+  .vote-col.selected .vote-btn {
+    border-color: var(--bar-color);
+    background: color-mix(in srgb, var(--bar-color) 25%, transparent);
+  }
+  .vote-col.selected .vote-btn .check { opacity: 1; transform: scale(1); }
+  .vote-col.selected .vote-btn::before { opacity: 0.2; }
+
+  /* 반응형: 작은 폰 - 4개 가로 유지, 크기만 줄임 */
+  @media (max-width: 620px) {
+    .vote-grid {
+      gap: 0.4rem;
+    }
+    .vote-col { gap: 0.5rem; }
+    .bar-wrap {
+      height: 180px;
+      padding: 0.3rem;
+      margin-top: 1.6rem;
+    }
+    .bar-crown {
+      top: -1.6rem;
+      font-size: 1.4rem;
+    }
+    .bar-count-inside {
+      font-size: 0.8rem;
+      top: 4px;
+    }
+    .bar-count-empty {
+      font-size: 0.85rem;
+    }
+    .vote-btn {
+      padding: 0.7rem 0.3rem;
+      gap: 0.25rem;
+      border-radius: 0.9rem;
+    }
+    .vote-btn .emoji {
+      font-size: 1.5rem;
+    }
+    .vote-btn .label {
+      font-size: 0.72rem;
+      line-height: 1.1;
+    }
+    .vote-btn .check {
+      top: 0.2rem; right: 0.2rem;
+      font-size: 0.9rem;
+    }
+    /* 폰에서는 짧은 라벨로 자동 변환 */
+    .vote-btn .label[data-id="youtube"]::before  { content: "Shorts"; }
+    .vote-btn .label[data-id="instagram"]::before { content: "Reels"; }
+    .vote-btn .label[data-id="tiktok"]::before    { content: "TikTok"; }
+    .vote-btn .label[data-id="facebook"]::before  { content: "Facebook"; }
+    .vote-btn .label[data-id]::before { display: block; }
+    .vote-btn .label[data-id] { font-size: 0; }
+    .vote-btn .label[data-id]::before { font-size: 0.78rem; }
+  }
+  /* 아주 좁은 폰 (350px 이하) */
+  @media (max-width: 380px) {
+    .container { padding: 1.2rem 0.5rem 9rem; }
+    .vote-grid { gap: 0.3rem; }
+    .bar-wrap { height: 160px; }
+    .vote-btn .emoji { font-size: 1.3rem; }
+    .vote-btn .label[data-id]::before { font-size: 0.7rem; }
+  }
+
+  /* ===== 날아가는 표 ===== */
+  .flying-vote {
+    position: fixed;
+    z-index: 40;
+    pointer-events: none;
+    font-size: 2.5rem;
+    will-change: transform, opacity;
+    filter: drop-shadow(0 0 12px var(--fv-color));
+    animation: flyToBar 0.85s cubic-bezier(.45,.05,.55,.95) forwards;
+  }
+  @keyframes flyToBar {
+    0%   { transform: translate(0,0) scale(1) rotate(0); opacity: 1; }
+    60%  { transform: translate(calc(var(--tx) * 0.75), calc(var(--ty) * 0.45 - 120px)) scale(1.35) rotate(220deg); opacity: 1; }
+    100% { transform: translate(var(--tx), var(--ty)) scale(0.3) rotate(360deg); opacity: 0; }
+  }
+
+  /* ===== 반응 이모지 ===== */
+  .reactions-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+  }
+  .react-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: white;
+    padding: 0.85rem 0.4rem;
+    border-radius: 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    transition: transform 0.12s, background 0.2s;
+    position: relative;
+    overflow: visible;
+  }
+  .react-btn:hover { background: rgba(255,255,255,0.1); }
+  .react-btn:active { transform: scale(0.9); }
+  .react-btn.pop { animation: reactPop 0.3s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes reactPop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.2); }
+    100% { transform: scale(1); }
+  }
+  .react-btn .react-emoji { font-size: 2rem; line-height: 1; }
+  .react-btn .react-count {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+  /* 콤보 배지 */
+  .combo-badge {
+    position: absolute;
+    top: -8px; right: -8px;
+    background: linear-gradient(135deg, var(--pink), var(--yellow));
+    color: #000;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    opacity: 0;
+    transform: scale(0);
+    transition: opacity 0.2s, transform 0.3s cubic-bezier(.34,1.56,.64,1);
+    box-shadow: 0 4px 12px rgba(255,0,128,0.4);
+    pointer-events: none;
+  }
+  .react-btn.comboing .combo-badge { opacity: 1; transform: scale(1); }
+
+  /* ===== 결과 화면 모드 (종료 시) ===== */
+  body.result-mode .vote-card-title,
+  body.result-mode .vote-hint,
+  body.result-mode .voted-banner,
+  body.result-mode .closed-banner,
+  body.result-mode .reactions-card,
+  body.result-mode .vote-btn,
+  body.result-mode #soundBtn,
+  body.result-mode #crtBtn,
+  body.result-mode #shakeBtn,
+  body.result-mode #captureBtn,
+  body.result-mode #bgmBtn {
+    display: none !important;
+  }
+  body.result-mode .vote-col {
+    gap: 0 !important;
+  }
+  /* 종료 시 결과 배너 */
+  .result-banner {
+    display: none;
+    text-align: center;
+    padding: 1.5rem 1.2rem;
+    background: linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,0,128,0.2));
+    border: 2px solid var(--gold);
+    border-radius: 1.25rem;
+    margin-bottom: 1.5rem;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: -0.01em;
+    box-shadow: 0 0 40px rgba(255,215,0,0.3);
+  }
+  body.result-mode .result-banner {
+    display: block;
+    animation: slideDown 0.6s cubic-bezier(.34,1.56,.64,1);
+  }
+  @media (max-width: 620px) {
+    .result-banner { font-size: 1.05rem; padding: 1.1rem 0.8rem; }
+  }
+
+  /* ===== 하단 컨트롤 ===== */
+  .bottom-panel {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent 0%, rgba(10,10,15,0.7) 30%, rgba(10,10,15,0.98) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    pointer-events: none;
+    flex-wrap: wrap;
+  }
+  .bottom-panel > * { pointer-events: auto; }
+  .ctrl-btn {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 0.65rem 0.95rem;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+    color: white;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    white-space: nowrap;
+  }
+  .ctrl-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); }
+  .ctrl-btn.active { background: rgba(255,229,0,0.2); border-color: var(--yellow); color: var(--yellow); }
+  .ctrl-btn.gold {
+    background: linear-gradient(135deg, #FF8C00, var(--gold));
+    color: #000;
+    border-color: transparent;
+    box-shadow: 0 6px 24px rgba(255,215,0,0.35);
+  }
+  .ctrl-btn.capture {
+    background: linear-gradient(135deg, var(--cyan), var(--purple));
+    border-color: transparent;
+    box-shadow: 0 6px 24px rgba(0,229,255,0.35);
+  }
+
+  /* 떠오르는 반응 */
+  .fx-layer {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 15;
+    overflow: hidden;
+  }
+  .fly-emoji {
+    position: absolute;
+    bottom: 80px;
+    animation: floatUp 3.2s ease-out forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes floatUp {
+    0%   { transform: translate(0, 0) scale(0.5); opacity: 0; }
+    15%  { opacity: 1; transform: translate(var(--sway), -10vh) scale(1) rotate(15deg); }
+    50%  { transform: translate(calc(var(--sway) * -1), -50vh) scale(1.1) rotate(-15deg); }
+    100% { transform: translate(var(--sway), -100vh) scale(1.3) rotate(25deg); opacity: 0; }
+  }
+
+  /* 파티클 폭탄 (콤보 시) */
+  .particle {
+    position: fixed;
+    z-index: 15;
+    pointer-events: none;
+    animation: particleBurst 1.2s cubic-bezier(.3,.5,.5,1) forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes particleBurst {
+    0%   { transform: translate(0,0) scale(0.5) rotate(0); opacity: 1; }
+    100% { transform: translate(var(--px), var(--py)) scale(1.5) rotate(var(--pr)); opacity: 0; }
+  }
+
+  /* 토스트 */
+  .toast {
+    position: fixed;
+    top: 1.5rem; left: 50%;
+    transform: translateX(-50%) translateY(-120%);
+    z-index: 30;
+    background: rgba(10,10,15,0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--gold);
+    padding: 0.9rem 1.5rem;
+    border-radius: 999px;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    box-shadow: 0 10px 40px rgba(255,215,0,0.3);
+    transition: transform 0.5s cubic-bezier(.34,1.56,.64,1);
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="bg-gradient"></div>
+<div class="bg-grain"></div>
+
+<div class="container">
+  <header>
+    <div class="eyebrow" id="statusEyebrow"><span class="dot"></span> LIVE · 실시간 투표</div>
+    <h1>너의 최애 숏폼은? <span class="flair">🗳️</span></h1>
+    <div class="stats">
+      <div class="stat">👥 <strong id="userCount">0</strong>명 접속</div>
+      <div class="stat">📊 <strong id="totalVotes">0</strong>표</div>
+    </div>
+  </header>
+
+  <div class="card" id="voteCard">
+    <h2 class="vote-card-title">🗳️ 아래 항목을 눌러 투표하세요!</h2>
+    <div class="vote-hint" id="voteHint">
+      👆 항목을 탭하면 <strong>내 표가 막대로 날아가요!</strong>
+    </div>
+    <div class="voted-banner" id="votedBanner">
+      ✅ 투표 완료! 아래 반응도 눌러보세요 🎉
+    </div>
+    <div class="closed-banner" id="closedBanner">
+      🏁 투표가 종료되었습니다
+    </div>
+    <div class="result-banner">
+      🎉 우리 반 데이터 정리 완료!
+    </div>
+    <div class="vote-grid" id="voteGrid"></div>
+  </div>
+
+  <div class="card reactions-card">
+    <h2>🎭 반응 보내기 <span style="font-size:0.75rem;opacity:0.6;font-weight:400;">(연타하면 콤보!)</span></h2>
+    <div class="reactions-row">
+      <button class="react-btn" data-type="heart">
+        <div class="combo-badge" id="combo-heart">COMBO!</div>
+        <span class="react-emoji">💖</span>
+        <span class="react-count" id="count-heart">0</span>
+      </button>
+      <button class="react-btn" data-type="fire">
+        <div class="combo-badge" id="combo-fire">COMBO!</div>
+        <span class="react-emoji">🔥</span>
+        <span class="react-count" id="count-fire">0</span>
+      </button>
+      <button class="react-btn" data-type="clap">
+        <div class="combo-badge" id="combo-clap">COMBO!</div>
+        <span class="react-emoji">👏</span>
+        <span class="react-count" id="count-clap">0</span>
+      </button>
+      <button class="react-btn" data-type="laugh">
+        <div class="combo-badge" id="combo-laugh">COMBO!</div>
+        <span class="react-emoji">😂</span>
+        <span class="react-count" id="count-laugh">0</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="fx-layer" id="fxLayer"></div>
+<div class="toast" id="toast"></div>
+
+<!-- 배경음악 (8비트 게임 BGM) -->
+<audio id="bgm" loop preload="auto">
+  <source src="bgm.mp3" type="audio/mpeg">
+</audio>
+
+<div class="bottom-panel">
+  <button class="ctrl-btn" id="bgmBtn">🎵 BGM</button>
+  <button class="ctrl-btn" id="soundBtn">🔊</button>
+  <button class="ctrl-btn" id="crtBtn">📺 CRT</button>
+  <button class="ctrl-btn" id="shakeBtn">📱 흔들기</button>
+  <button class="ctrl-btn capture" id="captureBtn">📸 결과저장</button>
+  <button class="ctrl-btn gold" id="closeBtn">🏁 종료</button>
+  <button class="ctrl-btn" id="resetBtn">🔄 초기화</button>
+</div>
+
+<script>
+  const socket = io();
+  let hasVoted = false;
+  let isClosed = false;
+  let soundOn = true;
+  let crtOn = false;
+  let shakeOn = false;
+  let currentLeaderId = null;
+  let hasWonCelebrated = false;
+  let myVoteId = null;
+  const bgm = document.getElementById('bgm');
+  bgm.volume = 0.3;
+  let bgmOn = false;
+
+  let state = {
+    options: [],
+    votes: {},
+    reactions: { heart: 0, fire: 0, clap: 0, laugh: 0 }
+  };
+
+  const COLORS = {
+    youtube:   '#FF0033',
+    instagram: '#E1306C',
+    tiktok:    '#00F2EA',
+    facebook:  '#1877F2'
+  };
+  const fallbackColors = ['#FF0080', '#FFE500', '#00E5FF', '#8B00FF', '#00FF88'];
+  function colorFor(id, i) { return COLORS[id] || fallbackColors[i % fallbackColors.length]; }
+
+  // ===== 효과음 =====
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+    return audioCtx;
+  }
+  function beep(freq, duration = 0.1, type = 'sine', volume = 0.15) {
+    if (!soundOn) return;
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + duration);
+  }
+  function playVote() { beep(600, 0.08); setTimeout(() => beep(900, 0.12), 80); }
+  function playLand() { beep(1200, 0.08, 'triangle', 0.18); }
+  function playReaction() { beep(1000 + Math.random() * 400, 0.06, 'triangle', 0.1); }
+  function playCombo() {
+    [800, 1000, 1300].forEach((f, i) => setTimeout(() => beep(f, 0.08, 'square', 0.12), i * 60));
+  }
+  function playLeaderChange() { beep(500, 0.08); setTimeout(() => beep(700, 0.08), 90); setTimeout(() => beep(1000, 0.15), 180); }
+  function playClose() {
+    [400, 500, 600, 800].forEach((f, i) => setTimeout(() => beep(f, 0.15, 'square', 0.12), i * 100));
+  }
+
+  // ===== 진동 리듬 =====
+  function vibrate(pattern) {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  }
+
+  // ===== 투표 그리드 렌더 =====
+  function renderGrid() {
+    const grid = document.getElementById('voteGrid');
+    grid.innerHTML = '';
+    state.options.forEach((o, i) => {
+      const col = document.createElement('div');
+      col.className = 'vote-col';
+      col.dataset.id = o.id;
+      col.dataset.emoji = o.emoji;
+      col.style.setProperty('--bar-color', colorFor(o.id, i));
+      col.innerHTML = `
+        <div class="bar-wrap">
+          <div class="bar-crown">👑</div>
+          <div class="bar-count-empty">0표</div>
+          <div class="bar">
+            <div class="bar-count-inside">0표</div>
+          </div>
+        </div>
+        <button class="vote-btn" data-id="${o.id}">
+          <div class="check">✓</div>
+          <div class="emoji">${o.emoji}</div>
+          <div class="label" data-id="${o.id}">${o.label}</div>
+        </button>
+      `;
+      col.querySelector('.vote-btn').addEventListener('click', (e) => castVote(o.id, e.currentTarget));
+      grid.appendChild(col);
+    });
+    updateBars();
+    updateButtonsState();
+  }
+
+  // ===== 막대 업데이트 =====
+  function updateBars() {
+    const values = state.options.map(o => state.votes[o.id] || 0);
+    const max = Math.max(...values, 1);
+    const absMax = Math.max(...values);
+
+    state.options.forEach((o) => {
+      const col = document.querySelector(`.vote-col[data-id="${o.id}"]`);
+      if (!col) return;
+      const count = state.votes[o.id] || 0;
+      const percent = (count / max) * 100;
+
+      const bar = col.querySelector('.bar');
+      bar.style.height = percent + '%';
+      bar.style.width = '100%';
+
+      col.querySelector('.bar-count-inside').textContent = count + '표';
+      col.querySelector('.bar-count-empty').textContent = count + '표';
+      col.dataset.empty = count === 0 ? 'true' : 'false';
+
+      if (absMax > 0 && count === absMax) {
+        const leaderCount = values.filter(v => v === absMax).length;
+        col.classList.toggle('leader', leaderCount === 1);
+      } else {
+        col.classList.remove('leader');
+      }
+    });
+  }
+
+  function updateButtonsState() {
+    document.querySelectorAll('.vote-col').forEach(col => {
+      const btn = col.querySelector('.vote-btn');
+      const id = col.dataset.id;
+      btn.disabled = hasVoted || isClosed;
+      col.classList.toggle('selected', id === myVoteId);
+    });
+  }
+
+  // ===== 투표 + 날아가는 표 애니메이션 =====
+  function castVote(id, btnEl) {
+    if (hasVoted || isClosed) return;
+    hasVoted = true;
+    myVoteId = id;
+
+    vibrate([30, 20, 50, 20, 100]); // 모스 리듬
+    playVote();
+
+    // 날아가는 이모지 생성
+    const col = document.querySelector(`.vote-col[data-id="${id}"]`);
+    const opt = state.options.find(o => o.id === id);
+    const idx = state.options.findIndex(o => o.id === id);
+    const color = colorFor(id, idx);
+
+    const btnRect = btnEl.getBoundingClientRect();
+    const barWrap = col.querySelector('.bar-wrap');
+    const barRect = barWrap.getBoundingClientRect();
+
+    const fly = document.createElement('div');
+    fly.className = 'flying-vote';
+    fly.textContent = opt.emoji;
+    fly.style.left = (btnRect.left + btnRect.width/2 - 20) + 'px';
+    fly.style.top  = (btnRect.top + btnRect.height/2 - 20) + 'px';
+    fly.style.setProperty('--fv-color', color);
+
+    const destX = barRect.left + barRect.width/2;
+    const destY = barRect.top + barRect.height - 40;
+    fly.style.setProperty('--tx', (destX - (btnRect.left + btnRect.width/2)) + 'px');
+    fly.style.setProperty('--ty', (destY - (btnRect.top + btnRect.height/2)) + 'px');
+
+    document.body.appendChild(fly);
+
+    // 도착 시 막대 튕김 + 서버로 투표 전송 + 효과음 + 컨페티
+    setTimeout(() => {
+      fly.remove();
+      socket.emit('vote', id);
+      playLand();
+      vibrate([15, 10, 40]);
+      col.classList.remove('bounce');
+      void col.offsetWidth;
+      col.classList.add('bounce');
+
+      // 막대에서 작은 파티클 터지기
+      const bx = barRect.left + barRect.width / 2;
+      const by = barRect.top + barRect.height - 20;
+      confetti({
+        particleCount: 30,
+        spread: 60,
+        startVelocity: 25,
+        origin: {
+          x: bx / window.innerWidth,
+          y: by / window.innerHeight
+        },
+        colors: [color, '#FFE500', '#ffffff']
+      });
+    }, 800);
+
+    // 즉시 UI 전환
+    document.getElementById('voteHint').style.display = 'none';
+    setTimeout(() => {
+      document.getElementById('votedBanner').classList.add('show');
+    }, 900);
+    updateButtonsState();
+  }
+
+  // ===== 1위 변경 =====
+  function checkLeaderChange() {
+    const entries = Object.entries(state.votes);
+    const max = Math.max(...entries.map(([, v]) => v));
+    if (max === 0) { currentLeaderId = null; return; }
+    const leaders = entries.filter(([, v]) => v === max).map(([k]) => k);
+
+    if (leaders.length === 1) {
+      const newLeader = leaders[0];
+      if (currentLeaderId && currentLeaderId !== newLeader) {
+        const opt = state.options.find(o => o.id === newLeader);
+        showToast(`👑 ${opt.emoji} ${opt.label}이(가) 1위!`);
+        playLeaderChange();
+        vibrate([80, 40, 80, 40, 150]);
+      }
+      currentLeaderId = newLeader;
+    } else {
+      currentLeaderId = null;
+    }
+  }
+
+  function showToast(text) {
+    const t = document.getElementById('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ===== 반응 이모지 + 콤보 =====
+  const REACTION_EMOJI = { heart: '💖', fire: '🔥', clap: '👏', laugh: '😂' };
+  const HEART_POOL = ['💖','💗','💓','💞','💕','❤️','🧡','💛','💚','💙','💜','🩷'];
+  const comboState = { heart: 0, fire: 0, clap: 0, laugh: 0 };
+  const comboTimers = {};
+
+  document.querySelectorAll('.react-btn').forEach(btn => {
+    let last = 0;
+    btn.addEventListener('click', () => {
+      const now = Date.now();
+      if (now - last < 80) return;
+      last = now;
+      const type = btn.dataset.type;
+      socket.emit('reaction', type);
+      btn.classList.remove('pop');
+      void btn.offsetWidth;
+      btn.classList.add('pop');
+      vibrate(15);
+      playReaction();
+
+      // 콤보 로직
+      comboState[type]++;
+      clearTimeout(comboTimers[type]);
+      comboTimers[type] = setTimeout(() => {
+        comboState[type] = 0;
+        btn.classList.remove('comboing');
+      }, 1500);
+
+      if (comboState[type] >= 3) {
+        btn.classList.add('comboing');
+      }
+      if (comboState[type] >= 5) {
+        // 대폭발!
+        triggerParticleBurst(btn, type);
+        playCombo();
+        vibrate([30, 20, 30, 20, 30, 20, 80]);
+        showToast(`🔥 ${REACTION_EMOJI[type]} ${comboState[type]}콤보!`);
+        comboState[type] = 0;
+        btn.classList.remove('comboing');
+      }
+    });
+  });
+
+  function triggerParticleBurst(btn, type) {
+    const emoji = REACTION_EMOJI[type];
+    const rect = btn.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+
+    // 이모지 파티클 30개 뿌리기
+    for (let i = 0; i < 30; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.textContent = emoji;
+      p.style.fontSize = (1.2 + Math.random() * 1.5) + 'rem';
+      p.style.left = (cx - 15) + 'px';
+      p.style.top  = (cy - 15) + 'px';
+      const angle = Math.random() * Math.PI * 2;
+      const dist  = 150 + Math.random() * 250;
+      p.style.setProperty('--px', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--py', Math.sin(angle) * dist - 80 + 'px');
+      p.style.setProperty('--pr', (Math.random() * 720 - 360) + 'deg');
+      p.style.animationDuration = (1 + Math.random() * 0.6) + 's';
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 1800);
+    }
+    // 컨페티도 같이
+    confetti({
+      particleCount: 80,
+      spread: 120,
+      startVelocity: 40,
+      origin: { x: cx / window.innerWidth, y: cy / window.innerHeight },
+      colors: ['#FF0080', '#FFE500', '#00E5FF', '#8B00FF']
+    });
+  }
+
+  function spawnFlyEmoji(emoji) {
+    const h = document.createElement('div');
+    h.className = 'fly-emoji';
+    h.textContent = emoji;
+    h.style.left = (10 + Math.random() * 80) + '%';
+    h.style.fontSize = (1.5 + Math.random() * 2) + 'rem';
+    h.style.setProperty('--sway', (Math.random() * 120 - 60) + 'px');
+    h.style.animationDuration = (2.8 + Math.random() * 1) + 's';
+    document.getElementById('fxLayer').appendChild(h);
+    setTimeout(() => h.remove(), 4500);
+  }
+
+  // ===== 소켓 =====
+  socket.on('init', data => {
+    state.options   = data.options;
+    state.votes     = data.votes || {};
+    state.reactions = data.reactions || { heart: 0, fire: 0, clap: 0, laugh: 0 };
+    isClosed = data.closed;
+    applyClosedState();
+    renderGrid();
+    updateTotals();
+    updateReactionCounts();
+    const entries = Object.entries(state.votes);
+    const max = Math.max(...entries.map(([, v]) => v));
+    if (max > 0) {
+      const leaders = entries.filter(([, v]) => v === max);
+      if (leaders.length === 1) currentLeaderId = leaders[0][0];
+    }
+  });
+
+  socket.on('voteUpdate', votes => {
+    state.votes = votes;
+    updateBars();
+    updateTotals();
+    checkLeaderChange();
+  });
+
+  socket.on('userCount', n => {
+    document.getElementById('userCount').textContent = n;
+  });
+
+  socket.on('reactionBurst', data => {
+    state.reactions = data.all;
+    updateReactionCounts();
+    const emoji = data.type === 'heart'
+      ? HEART_POOL[Math.floor(Math.random() * HEART_POOL.length)]
+      : REACTION_EMOJI[data.type];
+    spawnFlyEmoji(emoji);
+  });
+
+  socket.on('closedState', closed => {
+    isClosed = closed;
+    applyClosedState();
+    updateButtonsState();
+    if (closed) celebrateWinner();
+  });
+
+  socket.on('resetAll', data => {
+    state.options   = data.options;
+    state.votes     = data.votes;
+    state.reactions = data.reactions || { heart: 0, fire: 0, clap: 0, laugh: 0 };
+    isClosed = data.closed;
+    hasVoted = false;
+    myVoteId = null;
+    currentLeaderId = null;
+    hasWonCelebrated = false;
+    document.getElementById('votedBanner').classList.remove('show');
+    document.getElementById('voteHint').style.display = '';
+    applyClosedState();
+    renderGrid();
+    updateTotals();
+    updateReactionCounts();
+  });
+
+  function updateTotals() {
+    const total = Object.values(state.votes).reduce((a, b) => a + b, 0);
+    document.getElementById('totalVotes').textContent = total;
+  }
+  function updateReactionCounts() {
+    Object.entries(state.reactions).forEach(([k, v]) => {
+      const el = document.getElementById('count-' + k);
+      if (el) el.textContent = v;
+    });
+  }
+  function applyClosedState() {
+    document.getElementById('statusEyebrow').classList.toggle('closed', isClosed);
+    document.getElementById('closedBanner').classList.toggle('show', isClosed);
+    document.getElementById('closeBtn').textContent = isClosed ? '🔓 재개' : '🏁 종료';
+    document.body.classList.toggle('result-mode', isClosed);
+    if (isClosed) {
+      // BGM 자동 정지
+      if (bgmOn && bgm) {
+        bgm.pause();
+        bgmOn = false;
+        document.getElementById('bgmBtn').textContent = '🎵 BGM';
+        document.getElementById('bgmBtn').classList.remove('active');
+      }
+    }
+    if (isClosed || hasVoted) {
+      document.getElementById('voteHint').style.display = 'none';
+    } else {
+      document.getElementById('voteHint').style.display = '';
+    }
+  }
+
+  // ===== 우승 폭죽 =====
+  function celebrateWinner() {
+    if (hasWonCelebrated) return;
+    hasWonCelebrated = true;
+    playClose();
+    vibrate([100, 50, 100, 50, 100, 50, 200]);
+
+    const entries = Object.entries(state.votes);
+    const max = Math.max(...entries.map(([, v]) => v));
+    if (max === 0) return;
+    const winners = entries.filter(([, v]) => v === max);
+    const winnerColor = colorFor(winners[0][0], state.options.findIndex(o => o.id === winners[0][0]));
+    const duration = 3000;
+    const end = Date.now() + duration;
+    const colors = [winnerColor, '#FFD700', '#FFE500', '#ffffff', '#FF0080'];
+
+    (function frame() {
+      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors });
+      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    })();
+
+    [0, 250, 500].forEach(delay => {
+      setTimeout(() => {
+        confetti({ particleCount: 150, spread: 120, startVelocity: 55, origin: { x: 0.5, y: 0.55 }, colors });
+      }, delay);
+    });
+
+    if (winners.length === 1) {
+      const opt = state.options.find(o => o.id === winners[0][0]);
+      setTimeout(() => showToast(`🏆 우승: ${opt.emoji} ${opt.label}!`), 400);
+    }
+  }
+
+  // ===== 하단 버튼 =====
+  document.getElementById('closeBtn').addEventListener('click', () => {
+    socket.emit('toggleClose');
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (confirm('정말 초기화할까요? 모든 투표와 반응이 사라집니다.')) {
+      socket.emit('reset');
+    }
+  });
+  document.getElementById('soundBtn').addEventListener('click', () => {
+    soundOn = !soundOn;
+    document.getElementById('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+    if (soundOn) getAudioCtx();
+  });
+  document.getElementById('crtBtn').addEventListener('click', () => {
+    crtOn = !crtOn;
+    document.body.classList.toggle('crt-on', crtOn);
+    document.getElementById('crtBtn').classList.toggle('active', crtOn);
+  });
+
+  // ===== 흔들기 모드 =====
+  let lastShakeTime = 0;
+  function onDeviceMotion(e) {
+    const acc = e.accelerationIncludingGravity;
+    if (!acc) return;
+    const magnitude = Math.sqrt((acc.x||0)**2 + (acc.y||0)**2 + (acc.z||0)**2);
+    const now = Date.now();
+    if (magnitude > 28 && now - lastShakeTime > 1200) {
+      lastShakeTime = now;
+      // 하트 연타 10개
+      for (let i = 0; i < 10; i++) {
+        setTimeout(() => socket.emit('reaction', 'heart'), i * 60);
+      }
+      vibrate([50, 30, 50, 30, 100]);
+      showToast('📱💖 흔들기 감지! 하트 폭탄!');
+    }
+  }
+
+  document.getElementById('shakeBtn').addEventListener('click', async () => {
+    if (shakeOn) {
+      // 끄기
+      window.removeEventListener('devicemotion', onDeviceMotion);
+      shakeOn = false;
+      document.getElementById('shakeBtn').classList.remove('active');
+      showToast('흔들기 모드 OFF');
+      return;
+    }
+    try {
+      // iOS 13+ 권한 요청 필요
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        const response = await DeviceMotionEvent.requestPermission();
+        if (response !== 'granted') {
+          showToast('❌ 센서 권한이 거부됐어요');
+          return;
+        }
+      }
+      if (typeof DeviceMotionEvent === 'undefined') {
+        showToast('❌ 이 기기는 흔들기 모드 미지원');
+        return;
+      }
+      window.addEventListener('devicemotion', onDeviceMotion);
+      shakeOn = true;
+      document.getElementById('shakeBtn').classList.add('active');
+      showToast('📱 흔들기 모드 ON! 폰을 흔들면 하트 폭탄!');
+    } catch (err) {
+      showToast('❌ 흔들기 모드 오류');
+    }
+  });
+
+  // ===== 결과 저장 (html2canvas) =====
+  document.getElementById('captureBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('captureBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '📸 저장중...';
+    btn.disabled = true;
+    try {
+      const card = document.getElementById('voteCard');
+      const canvas = await html2canvas(card, {
+        backgroundColor: '#0A0A0F',
+        scale: 2,
+        logging: false,
+        useCORS: true
+      });
+      const link = document.createElement('a');
+      const date = new Date();
+      const fileName = `숏폼투표결과_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}_${String(date.getHours()).padStart(2,'0')}${String(date.getMinutes()).padStart(2,'0')}.png`;
+      link.download = fileName;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('📸 이미지 저장 완료!');
+      playLand();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ 저장 실패');
+    } finally {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  });
+
+  document.addEventListener('click', () => { getAudioCtx(); }, { once: true });
+  window.addEventListener('resize', () => updateBars());
+
+  // ===== BGM (배경음악) =====
+  document.getElementById('bgmBtn').addEventListener('click', () => {
+    if (bgmOn) {
+      bgm.pause();
+      bgmOn = false;
+      document.getElementById('bgmBtn').textContent = '🎵 BGM';
+      document.getElementById('bgmBtn').classList.remove('active');
+    } else {
+      bgm.play().then(() => {
+        bgmOn = true;
+        document.getElementById('bgmBtn').textContent = '🎵 ON';
+        document.getElementById('bgmBtn').classList.add('active');
+      }).catch(err => {
+        showToast('❌ bgm.mp3 파일이 없어요!');
+        console.error('BGM 재생 실패:', err);
+      });
+    }
+  });
+</script>
+</body>
+</html>

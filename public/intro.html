@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0F">
+<title>🎬 숏폼 투표</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pink: #FF0080;
+    --yellow: #FFE500;
+    --cyan: #00E5FF;
+    --purple: #8B00FF;
+    --gold: #FFD700;
+    --dark: #0A0A0F;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; width: 100%; overflow: hidden; }
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--dark);
+    color: white;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+  }
+
+  /* 배경 그라데이션 */
+  .bg-gradient {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(255,0,128,0.35), transparent 45%),
+      radial-gradient(circle at 85% 75%, rgba(0,229,255,0.30), transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(139,0,255,0.20), transparent 55%);
+    animation: bgMove 18s ease-in-out infinite;
+  }
+  @keyframes bgMove {
+    0%, 100% { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg); }
+    50%      { transform: scale(1.25) rotate(180deg); filter: hue-rotate(30deg); }
+  }
+
+  .container {
+    position: relative; z-index: 2;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  /* 상단 LIVE 배지 */
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    opacity: 0.65;
+  }
+  .live-badge .dot {
+    width: 8px; height: 8px;
+    background: #00ff88;
+    border-radius: 50%;
+    box-shadow: 0 0 12px #00ff88;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.4); }
+  }
+
+  /* 영상 컨테이너 */
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    flex: 1;
+    max-height: 70vh;
+    border-radius: 1.5rem;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 20px 60px rgba(255,0,128,0.3),
+                0 0 80px rgba(0,229,255,0.2),
+                inset 0 0 0 1px rgba(255,255,255,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .video-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* 로딩 스피너 */
+  .loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.9);
+    z-index: 3;
+    gap: 1rem;
+    transition: opacity 0.4s;
+  }
+  .loading.hidden { opacity: 0; pointer-events: none; }
+  .loading .spinner {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(255,255,255,0.15);
+    border-top-color: var(--pink);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading .text {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    font-weight: 600;
+  }
+
+  /* 진행률 바 */
+  .progress-wrap {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    z-index: 4;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--pink), var(--yellow), var(--cyan));
+    transition: width 0.2s;
+    box-shadow: 0 0 10px var(--pink);
+  }
+
+  /* 영상 재생 중 안내 */
+  .watching-text {
+    font-size: 0.85rem;
+    opacity: 0.55;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .watching-text .wave {
+    display: inline-block;
+    animation: wave 1.4s ease-in-out infinite;
+  }
+  @keyframes wave {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+  }
+
+  /* 시작 버튼 */
+  .start-btn {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 900;
+    font-size: 1.3rem;
+    padding: 1.2rem 3rem;
+    background: linear-gradient(135deg, var(--pink) 0%, var(--purple) 50%, var(--cyan) 100%);
+    background-size: 200% 200%;
+    border: none;
+    color: white;
+    border-radius: 999px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    gap: 0.75rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(255,0,128,0.5),
+                0 0 60px rgba(0,229,255,0.3);
+    animation: gradientShift 3s ease infinite, slideUp 0.7s cubic-bezier(.34,1.56,.64,1);
+    transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
+    letter-spacing: -0.01em;
+  }
+  .start-btn.show { display: inline-flex; }
+  .start-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shine 2.5s infinite;
+  }
+  @keyframes shine {
+    0%   { left: -100%; }
+    50%  { left: 100%; }
+    100% { left: 100%; }
+  }
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px) scale(0.8); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .start-btn:hover { transform: translateY(-3px) scale(1.05); }
+  .start-btn:active { transform: scale(0.95); }
+
+  .start-btn .arrow {
+    display: inline-block;
+    font-size: 1.5rem;
+    animation: bounceRight 1.2s ease-in-out infinite;
+  }
+  @keyframes bounceRight {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(6px); }
+  }
+
+  /* 음소거 버튼 (재생 중에만) */
+  .mute-btn {
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.15s;
+  }
+  .mute-btn:hover { background: rgba(0,0,0,0.8); }
+  .mute-btn:active { transform: scale(0.9); }
+  .mute-btn.hidden { display: none; }
+
+  /* 에러 화면 */
+  .error-screen {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.9);
+    z-index: 6;
+    gap: 1rem;
+    padding: 2rem;
+    text-align: center;
+  }
+  .error-screen.show { display: flex; }
+  .error-screen .emoji { font-size: 3rem; }
+  .error-screen .msg { font-size: 0.95rem; opacity: 0.7; }
+  .error-screen button {
+    margin-top: 0.75rem;
+    padding: 0.6rem 1.5rem;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    border-radius: 999px;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .error-screen button:hover { background: rgba(255,255,255,0.2); }
+
+  @media (max-width: 500px) {
+    .container { padding: 1rem; gap: 1rem; }
+    .start-btn { font-size: 1.1rem; padding: 1rem 2.2rem; }
+    .live-badge { font-size: 0.7rem; }
+  }
+</style>
+</head>
+<body>
+<div class="bg-gradient"></div>
+
+<div class="container">
+  <div class="live-badge">
+    <span class="dot"></span> LIVE · 숏폼 투표
+  </div>
+
+  <div class="video-wrap">
+    <video id="introVideo" muted playsinline preload="auto">
+      <source src="intro.mp4" type="video/mp4">
+    </video>
+
+    <button class="mute-btn" id="muteBtn" aria-label="소리 켜기/끄기">🔇</button>
+
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="text">영상 불러오는 중...</div>
+    </div>
+
+    <div class="error-screen" id="errorScreen">
+      <div class="emoji">😢</div>
+      <div class="msg">영상을 불러올 수 없어요.<br>바로 시작할게요!</div>
+      <button onclick="location.href='/vote'">🚀 지금 시작하기</button>
+    </div>
+  </div>
+
+  <div class="watching-text" id="watchingText">
+    <span class="wave">🎞️</span>
+    <span>영상을 끝까지 봐주세요</span>
+  </div>
+
+  <button class="start-btn" id="startBtn">
+    🚀 시작하기
+    <span class="arrow">→</span>
+  </button>
+</div>
+
+<script>
+  const video = document.getElementById('introVideo');
+  const loading = document.getElementById('loading');
+  const muteBtn = document.getElementById('muteBtn');
+  const progressBar = document.getElementById('progressBar');
+  const startBtn = document.getElementById('startBtn');
+  const watchingText = document.getElementById('watchingText');
+  const errorScreen = document.getElementById('errorScreen');
+
+  let muted = true;
+
+  // 영상 로드 완료 시 로딩 숨김
+  video.addEventListener('loadeddata', () => {
+    loading.classList.add('hidden');
+    video.play().catch(err => {
+      console.warn('자동재생 실패:', err);
+      // 자동재생이 막힌 경우: 한 번 탭하면 재생
+      loading.classList.remove('hidden');
+      loading.querySelector('.text').textContent = '화면을 탭해서 시작하세요';
+      loading.style.cursor = 'pointer';
+      loading.addEventListener('click', () => {
+        video.play();
+        loading.classList.add('hidden');
+        loading.style.cursor = '';
+      }, { once: true });
+    });
+  });
+
+  // 재생 진행률
+  video.addEventListener('timeupdate', () => {
+    if (video.duration > 0) {
+      const percent = (video.currentTime / video.duration) * 100;
+      progressBar.style.width = percent + '%';
+    }
+  });
+
+  // 영상 끝나면 시작 버튼 등장
+  video.addEventListener('ended', () => {
+    startBtn.classList.add('show');
+    watchingText.style.display = 'none';
+    muteBtn.classList.add('hidden');
+  });
+
+  // 영상 에러 처리
+  video.addEventListener('error', () => {
+    console.error('영상 로드 실패');
+    loading.classList.add('hidden');
+    errorScreen.classList.add('show');
+  });
+
+  // 10초 내로 영상 로드 안 되면 에러 표시
+  setTimeout(() => {
+    if (video.readyState < 3 && !errorScreen.classList.contains('show')) {
+      errorScreen.classList.add('show');
+      loading.classList.add('hidden');
+    }
+  }, 10000);
+
+  // 음소거 토글
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    video.muted = muted;
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  });
+
+  // 시작 버튼 → 투표 화면으로 이동
+  startBtn.addEventListener('click', () => {
+    // 부드러운 페이드 아웃
+    document.body.style.transition = 'opacity 0.4s';
+    document.body.style.opacity = '0';
+    setTimeout(() => {
+      location.href = '/vote';
+    }, 400);
+  });
+</script>
+</body>
+</html>
