@@ -81,7 +81,7 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000); // 1시간마다 체크
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'),{index: false}));
 // 루트 "/" → 인트로 페이지 (영상 자동재생)
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'intro.html')));
 // "/vote" → 투표 화면
