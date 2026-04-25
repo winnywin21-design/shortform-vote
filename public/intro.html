@@ -284,7 +284,7 @@
 <div class="container">
 
   <div class="video-wrap">
-    <video id="introVideo" muted playsinline preload="auto" controls>
+    <video id="introVideo" playsinline preload="auto" controls>
       <source src="intro.mp4" type="video/mp4">
     </video>
 
@@ -331,17 +331,26 @@
   // 영상 로드 완료 시 로딩 숨김
   video.addEventListener('loadeddata', () => {
     loading.classList.add('hidden');
+video.addEventListener('loadeddata', () => {
+    loading.classList.add('hidden');
+    // 1차: 소리 ON으로 자동재생 시도
     video.play().catch(err => {
-      console.warn('자동재생 실패:', err);
-      // 자동재생이 막힌 경우: 한 번 탭하면 재생
-      loading.classList.remove('hidden');
-      loading.querySelector('.text').textContent = '화면을 탭해서 시작하세요';
-      loading.style.cursor = 'pointer';
-      loading.addEventListener('click', () => {
-        video.play();
-        loading.classList.add('hidden');
-        loading.style.cursor = '';
-      }, { once: true });
+      console.warn('소리 자동재생 실패, 무음으로 재시도:', err);
+      // 2차: 무음으로 폴백
+      video.muted = true;
+      muted = true;
+      muteBtn.textContent = '🔇';
+      video.play().catch(err2 => {
+        console.warn('무음 자동재생도 실패:', err2);
+        loading.classList.remove('hidden');
+        loading.querySelector('.text').textContent = '화면을 탭해서 시작하세요';
+        loading.style.cursor = 'pointer';
+        loading.addEventListener('click', () => {
+          video.play();
+          loading.classList.add('hidden');
+          loading.style.cursor = '';
+        }, { once: true });
+      });
     });
   });
 
